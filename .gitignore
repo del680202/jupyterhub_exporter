@@ -1,0 +1,11 @@
+# Intellj
+jupyterhub_exporter.iml
+.idea
+
+# Dependency
+Gopkg.lock
+Gopkg.toml
+vendor
+
+# Release
+release/ 
