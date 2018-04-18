@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"github.com/shirou/gopsutil/process" // https://godoc.org/github.com/shirou/gopsutil/process
 	"io/ioutil"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 type User struct {
@@ -102,12 +104,23 @@ func FetchMemoryUsage(user User, processes []Process, parameters map[string]stri
 func FetchDiskUsage(user User, parameters map[string]string, ch chan<- float64) {
 	userPath := fmt.Sprintf("%s/%s", parameters["notebookDir"], user.Name)
 	exist, _ := exists(userPath)
+	var result float64
 	if exist {
-		size, _ := dirSize(userPath)
-		ch <- float64(size)
-	} else {
-		ch <- 0
+		sizeCh := make(chan float64)
+		//Avoid disk too large
+		go func() {
+			size, _ := dirSize(userPath)
+			sizeCh <- float64(size)
+		}()
+
+		select {
+		case size := <-sizeCh:
+			result = size
+		case <-time.After(1 * time.Second):
+			result = math.MaxFloat64
+		}
 	}
+	ch <- result
 }
 
 func dirSize(path string) (int64, error) {

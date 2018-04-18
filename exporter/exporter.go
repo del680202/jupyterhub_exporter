@@ -1,7 +1,7 @@
 package exporter
 
 import (
-	. "github.com/del680202/jupyterhub_exporter/collector"
+	. "git.rakuten-it.com/DSD/jupyterhub_exporter/collector"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -62,17 +62,26 @@ func collectJupterHubMetrics(e *Exporter) {
 	memoryUsage := make(chan float64)
 	diskUsage := make(chan float64)
 
+	jobLength := len(users)
+	jobs := make(chan bool, jobLength)
+
 	for _, user := range users {
+		go func(ch chan bool) {
+			go FetchProcessCount(user, processes, e.Parameters, processCount)
+			go FetchCpuUsage(user, processes, e.Parameters, cpuUsage)
+			go FetchMemoryUsage(user, processes, e.Parameters, memoryUsage)
+			go FetchDiskUsage(user, e.Parameters, diskUsage)
 
-		go FetchProcessCount(user, processes, e.Parameters, processCount)
-		go FetchCpuUsage(user, processes, e.Parameters, cpuUsage)
-		go FetchMemoryUsage(user, processes, e.Parameters, memoryUsage)
-		go FetchDiskUsage(user, e.Parameters, diskUsage)
-
-		e.LabelMetrics["process_count"].WithLabelValues(user.Name).Set(<-processCount)
-		e.LabelMetrics["cpu_usage"].WithLabelValues(user.Name).Set(<-cpuUsage)
-		e.LabelMetrics["memory_usage"].WithLabelValues(user.Name).Set(<-memoryUsage)
-		e.LabelMetrics["disk_usage"].WithLabelValues(user.Name).Set(<-diskUsage)
+			e.LabelMetrics["process_count"].WithLabelValues(user.Name).Set(<-processCount)
+			e.LabelMetrics["cpu_usage"].WithLabelValues(user.Name).Set(<-cpuUsage)
+			e.LabelMetrics["memory_usage"].WithLabelValues(user.Name).Set(<-memoryUsage)
+			e.LabelMetrics["disk_usage"].WithLabelValues(user.Name).Set(<-diskUsage)
+			ch <- true
+		}(jobs)
+	}
+	//waiting for all jobs done
+	for i := 0; i < jobLength; i++ {
+		<-jobs
 	}
 }
 
