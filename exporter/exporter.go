@@ -66,7 +66,7 @@ func collectJupterHubMetrics(e *Exporter) {
 	jobs := make(chan bool, jobLength)
 
 	for _, user := range users {
-		go func(ch chan bool) {
+		go func(user User, done chan bool) {
 			go FetchProcessCount(user, processes, e.Parameters, processCount)
 			go FetchCpuUsage(user, processes, e.Parameters, cpuUsage)
 			go FetchMemoryUsage(user, processes, e.Parameters, memoryUsage)
@@ -76,8 +76,8 @@ func collectJupterHubMetrics(e *Exporter) {
 			e.LabelMetrics["cpu_usage"].WithLabelValues(user.Name).Set(<-cpuUsage)
 			e.LabelMetrics["memory_usage"].WithLabelValues(user.Name).Set(<-memoryUsage)
 			e.LabelMetrics["disk_usage"].WithLabelValues(user.Name).Set(<-diskUsage)
-			ch <- true
-		}(jobs)
+			done <- true
+		}(user, jobs)
 	}
 	//waiting for all jobs done
 	for i := 0; i < jobLength; i++ {
