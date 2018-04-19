@@ -51,37 +51,50 @@ func NewExporter(namespace string, parameters map[string]string) *Exporter {
 	}
 }
 
+type UserResult struct {
+	name         string
+	processCount float64
+	cpuUsage     float64
+	memoryUsage  float64
+	diskUsage    float64
+}
+
 func collectJupterHubMetrics(e *Exporter) {
 
 	users := FetchUserList(e.Parameters)
 	processes := FetchProcessInfoList()
 	e.Metrics["user_total"].Set(float64(len(users)))
 
-	processCount := make(chan float64)
-	cpuUsage := make(chan float64)
-	memoryUsage := make(chan float64)
-	diskUsage := make(chan float64)
-
 	jobLength := len(users)
-	jobs := make(chan bool, jobLength)
+	jobs := make(chan UserResult, jobLength)
 
 	for _, user := range users {
-		go func(user User, done chan bool) {
+		go func(user User, e *Exporter, result chan UserResult) {
+			processCount := make(chan float64)
+			cpuUsage := make(chan float64)
+			memoryUsage := make(chan float64)
+			diskUsage := make(chan float64)
 			go FetchProcessCount(user, processes, e.Parameters, processCount)
 			go FetchCpuUsage(user, processes, e.Parameters, cpuUsage)
 			go FetchMemoryUsage(user, processes, e.Parameters, memoryUsage)
 			go FetchDiskUsage(user, e.Parameters, diskUsage)
 
-			e.LabelMetrics["process_count"].WithLabelValues(user.Name).Set(<-processCount)
-			e.LabelMetrics["cpu_usage"].WithLabelValues(user.Name).Set(<-cpuUsage)
-			e.LabelMetrics["memory_usage"].WithLabelValues(user.Name).Set(<-memoryUsage)
-			e.LabelMetrics["disk_usage"].WithLabelValues(user.Name).Set(<-diskUsage)
-			done <- true
-		}(user, jobs)
+			result <- UserResult{
+				name:         user.Name,
+				processCount: <-processCount,
+				cpuUsage:     <-cpuUsage,
+				memoryUsage:  <-memoryUsage,
+				diskUsage:    <-diskUsage,
+			}
+		}(user, e, jobs)
 	}
 	//waiting for all jobs done
 	for i := 0; i < jobLength; i++ {
-		<-jobs
+		userResult := <-jobs
+		e.LabelMetrics["process_count"].WithLabelValues(userResult.name).Set(userResult.processCount)
+		e.LabelMetrics["cpu_usage"].WithLabelValues(userResult.name).Set(userResult.cpuUsage)
+		e.LabelMetrics["memory_usage"].WithLabelValues(userResult.name).Set(userResult.memoryUsage)
+		e.LabelMetrics["disk_usage"].WithLabelValues(userResult.name).Set(userResult.diskUsage)
 	}
 }
 
